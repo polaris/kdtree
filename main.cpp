@@ -1,55 +1,66 @@
 #include <iostream>
 #include <vector>
+#include <limits>
 #include <algorithm>
+#include <cmath>
+#include <stdexcept>
 
-struct Point3d
+template <int DIM>
+class KdPoint
 {
-    Point3d()
+public:
+    KdPoint()
     {
-        v_[0] = 0;
-        v_[1] = 0;
-        v_[2] = 0;
+        memset(v_, 0, DIM * sizeof(float));
     }
 
-    Point3d(float x, float y, float z)
+    KdPoint(float * const v)
     {
-        v_[0] = x;
-        v_[1] = y;
-        v_[2] = z;
+        memcpy(v_, v, DIM * sizeof(float));
     }
 
     float operator [](int i) const
     {
-        // TODO: add bounds check
+        if (i >= DIM) {
+            throw std::runtime_error("index must be smaller than DIM");
+        }
         return v_[i];
     }
 
-    float v_[3];
+private:
+    float v_[DIM];
 };
 
-static float distance(const Point3d &p, const Point3d &q)
+template <int DIM>
+static float distance(const KdPoint<DIM> &p, const KdPoint<DIM> &q)
 {
-    const float dx = q[0] - p[0];
-    const float dy = q[1] - p[1];
-    const float dz = q[2] - p[2];
-    return sqrtf(dx * dx + dy * dy + dz * dz);
+    float result = 0, d = 0;
+    for (int i = 0; i < DIM; i++) {
+        d = q[i] - p[i];
+        result = d * d;
+    }
+    return sqrtf(d);
 }
 
-class Sorter
+template <int DIM>
+class KdPointComparer
 {
 public:
-    Sorter(int axis)
+    KdPointComparer(int axis)
     : axis_(axis)
     {
+        if (axis >= DIM) {
+            throw std::runtime_error("axis must be smaller than DIM");
+        }
     }
 
-    bool operator ()(const Point3d &a, const Point3d &b)
+    bool operator ()(const KdPoint<DIM> &a, const KdPoint<DIM> &b) const
     {
         return a[axis_] < b[axis_];
     }
 
 private:
-    int axis_;
+    const int axis_;
 };
 
 template <int DIM>
@@ -61,7 +72,7 @@ struct KdHyperRect
         memset(max, 0, DIM * sizeof(float));
     }
 
-    KdHyperRect(const std::vector<Point3d> &pts)
+    KdHyperRect(const std::vector<KdPoint<DIM> > &pts)
     {
         memset(min, 0, DIM * sizeof(float));
         memset(max, 0, DIM * sizeof(float));
@@ -71,7 +82,7 @@ struct KdHyperRect
         }
     }
 
-    void extend(const Point3d &pt)
+    void extend(const KdPoint<DIM> &pt)
     {
         for (int i = 0; i < DIM; ++i) {
             if (pt[i] < min[i]) {
@@ -83,7 +94,7 @@ struct KdHyperRect
         }
     }
 
-    float dist_sq(const Point3d &pt) const
+    float dist_sq(const KdPoint<DIM> &pt) const
     {
         float result = 0;
         for (int i = 0; i < DIM; i++) {
@@ -105,23 +116,23 @@ struct KdHyperRect
 template <int DIM>
 struct KdTreeNode
 {
-    KdTreeNode(int axis, const Point3d &pt)
+    KdTreeNode(int axis, const KdPoint<DIM> &pt)
     : axis_(axis), pt_(pt), position_(pt[axis]), left_(0), right_(0)
     {
     }
 
-    KdTreeNode(int axis, const std::vector<Point3d> &pts)
+    KdTreeNode(int axis, const std::vector<KdPoint<DIM> > &pts)
     : axis_(axis), left_(0), right_(0)
     {
-        std::vector<Point3d> temp(pts.begin(), pts.end());
+        std::vector<KdPoint<DIM> > temp(pts.begin(), pts.end());
 
-        Sorter sorter(axis_);
-        std::sort(temp.begin(), temp.end(), sorter);
+        const KdPointComparer<DIM> pointComparer(axis_);
+        std::sort(temp.begin(), temp.end(), pointComparer);
 
         const size_t median = temp.size() / 2;
 
-        std::vector<Point3d> left(temp.begin(), temp.begin() + median);
-        std::vector<Point3d> right(temp.begin() + median, temp.end());
+        std::vector<KdPoint<DIM> > left(temp.begin(), temp.begin() + median);
+        std::vector<KdPoint<DIM> > right(temp.begin() + median, temp.end());
 
         position_ = temp[median][axis_];
 
@@ -149,10 +160,10 @@ struct KdTreeNode
         }
     }
 
-    void nearest(const Point3d &pt, Point3d &res, float &d)
+    void nearest(const KdPoint<DIM> &pt, KdPoint<DIM> &res, float &d)
     {
         if (left_ == 0 && right_ == 0) {
-            const float td = distance(pt_, pt);
+            const float td = distance<DIM>(pt_, pt);
             if (td < d) {
                 d = td;
                 res = pt_;
@@ -177,7 +188,7 @@ struct KdTreeNode
     }
 
     int axis_;
-    Point3d pt_;
+    KdPoint<DIM> pt_;
     float position_;
     KdTreeNode *left_, *right_;
 };
@@ -186,10 +197,9 @@ template <int DIM>
 class KdTree
 {
 public:
-    KdTree(const std::vector<Point3d> &pts)
-    : rect_(pts)
+    KdTree(const std::vector<KdPoint<DIM> > &pts)
+    : root_(new KdTreeNode<DIM>(0, pts)), rect_(pts)
     {
-        root_ = new KdTreeNode<DIM>(0, pts);
     }
 
     ~KdTree()
@@ -197,29 +207,39 @@ public:
         delete root_;
     }
 
-    void nearest(const Point3d &pt, Point3d &res) const
+    void nearest(const KdPoint<DIM> &pt, KdPoint<DIM> &res) const
     {
         if (root_) {
-            float d = FLT_MAX;
+            float d = std::numeric_limits<float>::max();
             root_->nearest(pt, res, d);
         }
     }
 
 private:
-    KdTreeNode<DIM> *root_;
+    KdTreeNode<DIM> * const root_;
     KdHyperRect<DIM> rect_;
 };
 
 int main()
 {
-    std::vector<Point3d> pts;
-    pts.push_back(Point3d(0, 0, 0));
-    pts.push_back(Point3d(0, 2, 0));
-    pts.push_back(Point3d(2, 0, 0));
-    pts.push_back(Point3d(2, 2, 0));
+    std::vector<KdPoint<3> > pts;
+    
+    float a[3] = { 0, 0, 0 };
+    float b[3] = { 0, 2, 0 };
+    float c[3] = { 2, 0, 0 };
+    float d[3] = { 2, 2, 0 };
+    float e[3] = { 2, -1, 0 };
+    float f[3] = { -1, -1, -1 };
+    
+    pts.push_back(KdPoint<3>(a));
+    pts.push_back(KdPoint<3>(b));
+    pts.push_back(KdPoint<3>(c));
+    pts.push_back(KdPoint<3>(d));
 
     KdTree<3> t2(pts);
 
-    Point3d q(2, -1, 0), res(-1, -1, -1);
+    KdPoint<3> q(e), res(f);
     t2.nearest(q, res);
+    
+    std::cout << res[0] << ", " << res[1] << ", " << res[2] << std::endl;
 }
