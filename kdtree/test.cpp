@@ -21,45 +21,27 @@
  *
  */
 
-#ifndef __KDTREE_H
-#define __KDTREE_H
-
-#include "KdTreeNode.h"
-#include "KdHyperRect.h"
 #include "KdPoint.h"
+#include "KdTree.h"
 
+#include <iostream>
 #include <vector>
 
-template <int DIM>
-class KdTree
+int main()
 {
-public:
-    KdTree(const KdPoint<DIM> * const pts, int count)
-    {
-        const std::vector<KdPoint<DIM> > vpts(pts, pts + count);
-        root_ = new KdTreeNode<DIM>(0, vpts);
-        rect_.extend(vpts);
-    }
+    KdPoint<3> pts[] = {{ 2, 3, 0 }, 
+                        { 5, 4, 0 },
+                        { 9, 6, 0 },
+                        { 4, 7, 0 },
+                        { 8, 1, 0 },
+                        { 7, 2, 0 }};
 
-    ~KdTree()
-    {
-        delete root_;
-    }
+    KdTree<3> t2(pts, 6);
 
-    void nearest(const KdPoint<DIM> &pt, KdPoint<DIM> &res, float &dist) const
-    {
-        if (root_) {
-            dist = std::numeric_limits<float>::max();
-            root_->nearest(pt, res, dist, rect_);
-            dist = sqrt(dist);
-        }
-    }
-
-private:
-    KdTreeNode<DIM> * root_;
-    KdHyperRect<DIM> rect_;
-
-    KdTree &operator =(const KdTree &);
-};
-
-#endif  // __KDTREE_H
+    KdPoint<3> q = { 9, 2, 0 }, res;
+    float dist;
+    t2.nearest(q, res, dist);
+    
+    std::cout << "found " << res[0] << ", " << res[1] << ", " << res[2] << std::endl;
+    std::cout << "distance " << dist << std::endl;
+}
